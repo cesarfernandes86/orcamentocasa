@@ -277,7 +277,7 @@ textarea:focus {
 }
 
 .allocation-row {
-  grid-template-columns: minmax(0, 1fr) 110px 128px 42px;
+  grid-template-columns: minmax(180px, 1fr) 90px 120px 120px 120px 42px;
 }
 
 .delete-button {
@@ -298,6 +298,30 @@ textarea:focus {
   border-radius: 8px;
   background: #edf5f0;
   color: var(--accent);
+  font-weight: 800;
+}
+
+.allocation-spent {
+  text-align: right;
+}
+
+.allocation-remaining {
+  background: #fff6e9;
+  color: #8b5b14;
+}
+
+.allocation-remaining.is-negative {
+  background: #fff1f1;
+  color: var(--danger);
+}
+
+.allocation-header {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 90px 120px 120px 120px 42px;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
   font-weight: 800;
 }
 
@@ -365,6 +389,10 @@ textarea:focus {
   .budget-row,
   .allocation-row {
     grid-template-columns: 1fr;
+  }
+
+  .allocation-header {
+    display: none;
   }
 
   .delete-button {

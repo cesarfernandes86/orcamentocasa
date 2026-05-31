@@ -107,6 +107,14 @@
             <span id="percentMeter"></span>
           </div>
           <div class="warning" id="allocationWarning" hidden></div>
+          <div class="allocation-header" aria-hidden="true">
+            <span>Item</span>
+            <span>%</span>
+            <span>Total</span>
+            <span>Usado</span>
+            <span>Resta</span>
+            <span></span>
+          </div>
           <div class="item-list" id="allocationList" aria-live="polite"></div>
         </section>
       </section>
@@ -125,7 +133,9 @@
       <article class="budget-row allocation-row">
         <input class="row-name" aria-label="Nome do item" />
         <input class="row-number" aria-label="Porcentagem" type="number" min="0" max="100" step="0.1" />
-        <output class="allocation-amount">0,00 €</output>
+        <output class="allocation-amount allocation-target">0,00 €</output>
+        <input class="allocation-spent" aria-label="Valor usado" type="number" min="0" step="0.01" placeholder="Usado" />
+        <output class="allocation-amount allocation-remaining">0,00 €</output>
         <button class="delete-button" type="button" aria-label="Excluir">×</button>
       </article>
     </template>

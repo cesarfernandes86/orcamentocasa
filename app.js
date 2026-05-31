@@ -61,7 +61,7 @@ function formatMonth(date) {
   return `${year}-${month}`;
 }
 
-function createBudget(fixedItems = []) {
+function createBudget(fixedItems = [], allocationItems = []) {
   return {
     income: 0,
     fixed: fixedItems.map((item) => ({
@@ -70,14 +70,22 @@ function createBudget(fixedItems = []) {
       amount: 0,
     })),
     variable: [],
-    allocations: [],
+    allocations: allocationItems.map((item) => ({
+      id: createId(),
+      name: item.name,
+      percent: toNumber(item.percent),
+      spent: 0,
+    })),
     updatedAt: new Date().toISOString(),
   };
 }
 
 function getBudget() {
   if (!state.budgets[state.currentMonth]) {
-    state.budgets[state.currentMonth] = createBudget(getFixedSeedForMonth(state.currentMonth));
+    state.budgets[state.currentMonth] = createBudget(
+      getFixedSeedForMonth(state.currentMonth),
+      getAllocationSeedForMonth(state.currentMonth),
+    );
     writeLocalData();
   }
   return state.budgets[state.currentMonth];
@@ -100,6 +108,25 @@ function getFixedSeedForMonth(month) {
   return [];
 }
 
+function getAllocationSeedForMonth(month) {
+  const previousMonths = Object.keys(state.budgets)
+    .filter((budgetMonth) => budgetMonth < month)
+    .sort()
+    .reverse();
+
+  for (const previousMonth of previousMonths) {
+    const allocationItems = state.budgets[previousMonth]?.allocations || [];
+    const uniqueItems = uniqueItemsByName(allocationItems)
+      .map((item) => ({
+        name: item.name,
+        percent: toNumber(item.percent),
+      }));
+    if (uniqueItems.length) return uniqueItems;
+  }
+
+  return [];
+}
+
 function uniqueNames(names) {
   const seen = new Set();
   return names
@@ -110,6 +137,17 @@ function uniqueNames(names) {
       seen.add(key);
       return true;
     });
+}
+
+function uniqueItemsByName(items) {
+  const seen = new Set();
+  return items.filter((item) => {
+    const name = String(item.name || "").trim();
+    const key = name.toLocaleLowerCase("pt-PT");
+    if (!name || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function readLocalData() {
@@ -155,6 +193,7 @@ function calculateBudget(budget) {
   const leftover = toNumber(budget.income) - expenses;
   const positiveLeftover = Math.max(leftover, 0);
   const percent = sumItems(budget.allocations, "percent");
+  const spent = sumItems(budget.allocations, "spent");
   const allocated = budget.allocations.reduce((total, item) => {
     return total + positiveLeftover * (toNumber(item.percent) / 100);
   }, 0);
@@ -166,6 +205,7 @@ function calculateBudget(budget) {
     leftover,
     positiveLeftover,
     percent,
+    spent,
     allocated,
     unallocated: leftover - allocated,
   };
@@ -275,20 +315,38 @@ function renderAllocationList(container, items, available) {
     const row = template.content.firstElementChild.cloneNode(true);
     const name = row.querySelector(".row-name");
     const percent = row.querySelector(".row-number");
-    const amount = row.querySelector(".allocation-amount");
+    const target = row.querySelector(".allocation-target");
+    const spent = row.querySelector(".allocation-spent");
+    const remaining = row.querySelector(".allocation-remaining");
     const remove = row.querySelector(".delete-button");
+    const targetValue = available * (toNumber(item.percent) / 100);
+    const spentValue = toNumber(item.spent);
+    const remainingValue = targetValue - spentValue;
 
     name.value = item.name;
     percent.value = item.percent || "";
-    amount.value = currency.format(available * (toNumber(item.percent) / 100));
-    amount.textContent = amount.value;
+    spent.value = item.spent || "";
+    target.value = currency.format(targetValue);
+    target.textContent = target.value;
+    remaining.value = currency.format(remainingValue);
+    remaining.textContent = remaining.value;
+    remaining.classList.toggle("is-negative", remainingValue < 0);
 
     name.addEventListener("change", () => {
+      const previousName = item.name;
       item.name = name.value.trimStart();
+      renameAllocationInFutureMonths(previousName, item.name);
       persist();
     });
     percent.addEventListener("change", () => {
+      const previousPercent = item.percent;
       item.percent = toNumber(percent.value);
+      updateAllocationPercentInFutureMonths(item.name, previousPercent, item.percent);
+      persist();
+      render();
+    });
+    spent.addEventListener("change", () => {
+      item.spent = toNumber(spent.value);
       persist();
       render();
     });
@@ -363,6 +421,10 @@ function renameFixedInFutureMonths(previousName, nextName) {
 }
 
 function hasFixedName(items, name) {
+  return hasNamedItem(items, name);
+}
+
+function hasNamedItem(items, name) {
   return items.some((item) => sameName(item.name, name));
 }
 
@@ -374,14 +436,64 @@ function sameName(left, right) {
 function addAllocation(form) {
   const data = new FormData(form);
   const budget = getBudget();
-  budget.allocations.push({
+  const item = {
     id: createId(),
     name: String(data.get("name")).trim(),
     percent: toNumber(data.get("percent")),
-  });
+    spent: 0,
+  };
+  budget.allocations.push(item);
+  addAllocationToFutureMonths(item.name, item.percent);
   form.reset();
   persist();
   render();
+}
+
+function addAllocationToFutureMonths(name, percent) {
+  const cleanName = String(name || "").trim();
+  if (!cleanName) return;
+
+  Object.entries(state.budgets).forEach(([month, budget]) => {
+    if (month <= state.currentMonth) return;
+    if (hasNamedItem(budget.allocations, cleanName)) return;
+
+    budget.allocations.push({
+      id: createId(),
+      name: cleanName,
+      percent: toNumber(percent),
+      spent: 0,
+    });
+  });
+}
+
+function renameAllocationInFutureMonths(previousName, nextName) {
+  const oldName = String(previousName || "").trim();
+  const newName = String(nextName || "").trim();
+  if (!oldName || !newName) return;
+
+  Object.entries(state.budgets).forEach(([month, budget]) => {
+    if (month <= state.currentMonth) return;
+    budget.allocations.forEach((item) => {
+      if (sameName(item.name, oldName) && toNumber(item.spent) === 0) {
+        item.name = newName;
+      }
+    });
+  });
+}
+
+function updateAllocationPercentInFutureMonths(name, previousPercent, nextPercent) {
+  const cleanName = String(name || "").trim();
+  if (!cleanName) return;
+
+  Object.entries(state.budgets).forEach(([month, budget]) => {
+    if (month <= state.currentMonth) return;
+    budget.allocations.forEach((item) => {
+      const hasPreviousPercent = toNumber(item.percent) === toNumber(previousPercent);
+      if (sameName(item.name, cleanName) && hasPreviousPercent && toNumber(item.spent) === 0) {
+        item.percent = toNumber(nextPercent);
+      }
+    });
+  });
 }
 
 function shiftMonth(delta) {
@@ -455,9 +567,26 @@ function normalizeBudget(budget) {
   return {
     ...createBudget(),
     ...budget,
-    fixed: Array.isArray(budget.fixed) ? budget.fixed : [],
+    fixed: Array.isArray(budget.fixed) ? budget.fixed.map(normalizeMoneyItem) : [],
     variable: Array.isArray(budget.variable) ? budget.variable : [],
-    allocations: Array.isArray(budget.allocations) ? budget.allocations : [],
+    allocations: Array.isArray(budget.allocations) ? budget.allocations.map(normalizeAllocationItem) : [],
+  };
+}
+
+function normalizeMoneyItem(item) {
+  return {
+    id: item.id || createId(),
+    name: item.name || "",
+    amount: toNumber(item.amount),
+  };
+}
+
+function normalizeAllocationItem(item) {
+  return {
+    id: item.id || createId(),
+    name: item.name || "",
+    percent: toNumber(item.percent),
+    spent: toNumber(item.spent),
   };
 }
 
