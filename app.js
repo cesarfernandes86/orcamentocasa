@@ -13,9 +13,9 @@ const DEFAULT_FIREBASE_SETTINGS = {
   },
 };
 
-const currency = new Intl.NumberFormat("pt-BR", {
+const currency = new Intl.NumberFormat("pt-PT", {
   style: "currency",
-  currency: "BRL",
+  currency: "EUR",
 });
 
 const elements = {
