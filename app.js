@@ -61,10 +61,14 @@ function formatMonth(date) {
   return `${year}-${month}`;
 }
 
-function createBudget() {
+function createBudget(fixedItems = []) {
   return {
     income: 0,
-    fixed: [],
+    fixed: fixedItems.map((item) => ({
+      id: createId(),
+      name: item.name,
+      amount: 0,
+    })),
     variable: [],
     allocations: [],
     updatedAt: new Date().toISOString(),
@@ -73,9 +77,39 @@ function createBudget() {
 
 function getBudget() {
   if (!state.budgets[state.currentMonth]) {
-    state.budgets[state.currentMonth] = createBudget();
+    state.budgets[state.currentMonth] = createBudget(getFixedSeedForMonth(state.currentMonth));
+    writeLocalData();
   }
   return state.budgets[state.currentMonth];
+}
+
+function getFixedSeedForMonth(month) {
+  const previousMonths = Object.keys(state.budgets)
+    .filter((budgetMonth) => budgetMonth < month)
+    .sort()
+    .reverse();
+
+  for (const previousMonth of previousMonths) {
+    const fixedItems = state.budgets[previousMonth]?.fixed || [];
+    const names = uniqueNames(fixedItems.map((item) => item.name));
+    if (names.length) {
+      return names.map((name) => ({ name }));
+    }
+  }
+
+  return [];
+}
+
+function uniqueNames(names) {
+  const seen = new Set();
+  return names
+    .map((name) => String(name || "").trim())
+    .filter((name) => {
+      const key = name.toLocaleLowerCase("pt-PT");
+      if (!name || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 function readLocalData() {
@@ -95,18 +129,10 @@ function readSettings() {
     const stored = localStorage.getItem(SETTINGS_KEY);
     if (!stored) return DEFAULT_FIREBASE_SETTINGS;
     const settings = JSON.parse(stored);
-    return settings?.disabled ? null : settings;
+    return settings?.disabled ? DEFAULT_FIREBASE_SETTINGS : settings;
   } catch {
     return DEFAULT_FIREBASE_SETTINGS;
   }
-}
-
-function writeSettings(settings) {
-  if (!settings) {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ disabled: true }));
-    return;
-  }
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
 }
 
 function toNumber(value) {
@@ -213,7 +239,11 @@ function renderMoneyList(container, items, type) {
     amount.value = item.amount || "";
 
     name.addEventListener("change", () => {
+      const previousName = item.name;
       item.name = name.value.trimStart();
+      if (type === "fixed") {
+        renameFixedInFutureMonths(previousName, item.name);
+      }
       persist();
     });
     amount.addEventListener("change", () => {
@@ -287,14 +317,58 @@ function trimNumber(number) {
 function addMoneyItem(type, form) {
   const data = new FormData(form);
   const budget = getBudget();
-  budget[type].push({
+  const item = {
     id: createId(),
     name: String(data.get("name")).trim(),
     amount: toNumber(data.get("amount")),
-  });
+  };
+  budget[type].push(item);
+  if (type === "fixed") {
+    addFixedToFutureMonths(item.name);
+  }
   form.reset();
   persist();
   render();
+}
+
+function addFixedToFutureMonths(name) {
+  const cleanName = String(name || "").trim();
+  if (!cleanName) return;
+
+  Object.entries(state.budgets).forEach(([month, budget]) => {
+    if (month <= state.currentMonth) return;
+    if (hasFixedName(budget.fixed, cleanName)) return;
+
+    budget.fixed.push({
+      id: createId(),
+      name: cleanName,
+      amount: 0,
+    });
+  });
+}
+
+function renameFixedInFutureMonths(previousName, nextName) {
+  const oldName = String(previousName || "").trim();
+  const newName = String(nextName || "").trim();
+  if (!oldName || !newName) return;
+
+  Object.entries(state.budgets).forEach(([month, budget]) => {
+    if (month <= state.currentMonth) return;
+    budget.fixed.forEach((item) => {
+      if (sameName(item.name, oldName) && toNumber(item.amount) === 0) {
+        item.name = newName;
+      }
+    });
+  });
+}
+
+function hasFixedName(items, name) {
+  return items.some((item) => sameName(item.name, name));
+}
+
+function sameName(left, right) {
+  return String(left || "").trim().toLocaleLowerCase("pt-PT")
+    === String(right || "").trim().toLocaleLowerCase("pt-PT");
 }
 
 function addAllocation(form) {

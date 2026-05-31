@@ -10,6 +10,7 @@ Principais funcoes:
 
 - renda mensal;
 - custos fixos;
+- custos fixos copiados para meses seguintes apenas com o nome;
 - custos variaveis;
 - itens que recebem uma porcentagem do saldo restante;
 - alerta quando as porcentagens passam de 100%;
