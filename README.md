@@ -14,7 +14,7 @@ Principais funcoes:
 - custos variaveis;
 - itens que recebem uma porcentagem do saldo restante;
 - itens por porcentagem copiados para meses seguintes com nome e porcentagem;
-- campo de valor usado em cada item por porcentagem, com calculo do restante;
+- varios registros de uso em cada item por porcentagem, com soma automatica e calculo do restante;
 - alerta quando as porcentagens passam de 100%;
 - exportacao e importacao JSON;
 - sincronizacao opcional com Cloud Firestore.

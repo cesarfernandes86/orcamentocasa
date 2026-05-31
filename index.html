@@ -111,7 +111,6 @@
             <span>Item</span>
             <span>%</span>
             <span>Total</span>
-            <span>Usado</span>
             <span>Resta</span>
             <span></span>
           </div>
@@ -130,13 +129,20 @@
     </template>
 
     <template id="allocationItemTemplate">
-      <article class="budget-row allocation-row">
-        <input class="row-name" aria-label="Nome do item" />
-        <input class="row-number" aria-label="Porcentagem" type="number" min="0" max="100" step="0.1" />
-        <output class="allocation-amount allocation-target">0,00 €</output>
-        <input class="allocation-spent" aria-label="Valor usado" type="number" min="0" step="0.01" placeholder="Usado" />
-        <output class="allocation-amount allocation-remaining">0,00 €</output>
-        <button class="delete-button" type="button" aria-label="Excluir">×</button>
+      <article class="allocation-card">
+        <div class="budget-row allocation-row">
+          <input class="row-name" aria-label="Nome do item" />
+          <input class="row-number" aria-label="Porcentagem" type="number" min="0" max="100" step="0.1" />
+          <output class="allocation-amount allocation-target">0,00 €</output>
+          <output class="allocation-amount allocation-remaining">0,00 €</output>
+          <button class="delete-button" type="button" aria-label="Excluir">×</button>
+        </div>
+        <form class="usage-form">
+          <input name="description" aria-label="Descricao do uso" placeholder="Descricao do uso" />
+          <input name="amount" aria-label="Valor usado" type="number" min="0" step="0.01" placeholder="Valor" required />
+          <button type="submit">Registrar</button>
+        </form>
+        <div class="usage-list"></div>
       </article>
     </template>
 

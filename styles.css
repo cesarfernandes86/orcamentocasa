@@ -277,7 +277,16 @@ textarea:focus {
 }
 
 .allocation-row {
-  grid-template-columns: minmax(180px, 1fr) 90px 120px 120px 120px 42px;
+  grid-template-columns: minmax(180px, 1fr) 90px 120px 120px 42px;
+}
+
+.allocation-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
 }
 
 .delete-button {
@@ -301,10 +310,6 @@ textarea:focus {
   font-weight: 800;
 }
 
-.allocation-spent {
-  text-align: right;
-}
-
 .allocation-remaining {
   background: #fff6e9;
   color: #8b5b14;
@@ -317,12 +322,51 @@ textarea:focus {
 
 .allocation-header {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 90px 120px 120px 120px 42px;
+  grid-template-columns: minmax(180px, 1fr) 90px 120px 120px 42px;
   gap: 8px;
   margin-bottom: 8px;
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 800;
+}
+
+.usage-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px 104px;
+  gap: 8px;
+}
+
+.usage-form button {
+  min-height: 44px;
+  padding: 0 12px;
+}
+
+.usage-list {
+  display: grid;
+  gap: 6px;
+}
+
+.usage-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px 34px;
+  gap: 8px;
+  align-items: center;
+  min-height: 34px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.usage-row strong {
+  color: var(--text);
+  text-align: right;
+}
+
+.usage-delete {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  background: #f5e7e7;
+  color: var(--danger);
 }
 
 .meter {
@@ -387,7 +431,9 @@ textarea:focus {
 
   .quick-form,
   .budget-row,
-  .allocation-row {
+  .allocation-row,
+  .usage-form,
+  .usage-row {
     grid-template-columns: 1fr;
   }
 

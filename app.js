@@ -74,7 +74,7 @@ function createBudget(fixedItems = [], allocationItems = []) {
       id: createId(),
       name: item.name,
       percent: toNumber(item.percent),
-      spent: 0,
+      usage: [],
     })),
     updatedAt: new Date().toISOString(),
   };
@@ -193,7 +193,7 @@ function calculateBudget(budget) {
   const leftover = toNumber(budget.income) - expenses;
   const positiveLeftover = Math.max(leftover, 0);
   const percent = sumItems(budget.allocations, "percent");
-  const spent = sumItems(budget.allocations, "spent");
+  const spent = budget.allocations.reduce((total, item) => total + getAllocationSpent(item), 0);
   const allocated = budget.allocations.reduce((total, item) => {
     return total + positiveLeftover * (toNumber(item.percent) / 100);
   }, 0);
@@ -316,16 +316,16 @@ function renderAllocationList(container, items, available) {
     const name = row.querySelector(".row-name");
     const percent = row.querySelector(".row-number");
     const target = row.querySelector(".allocation-target");
-    const spent = row.querySelector(".allocation-spent");
     const remaining = row.querySelector(".allocation-remaining");
+    const usageForm = row.querySelector(".usage-form");
+    const usageList = row.querySelector(".usage-list");
     const remove = row.querySelector(".delete-button");
     const targetValue = available * (toNumber(item.percent) / 100);
-    const spentValue = toNumber(item.spent);
+    const spentValue = getAllocationSpent(item);
     const remainingValue = targetValue - spentValue;
 
     name.value = item.name;
     percent.value = item.percent || "";
-    spent.value = item.spent || "";
     target.value = currency.format(targetValue);
     target.textContent = target.value;
     remaining.value = currency.format(remainingValue);
@@ -345,8 +345,20 @@ function renderAllocationList(container, items, available) {
       persist();
       render();
     });
-    spent.addEventListener("change", () => {
-      item.spent = toNumber(spent.value);
+    usageForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const data = new FormData(usageForm);
+      const amount = toNumber(data.get("amount"));
+      if (!amount) return;
+
+      item.usage = Array.isArray(item.usage) ? item.usage : [];
+      item.usage.push({
+        id: createId(),
+        description: String(data.get("description") || "").trim(),
+        amount,
+        createdAt: new Date().toISOString(),
+      });
+      usageForm.reset();
       persist();
       render();
     });
@@ -357,6 +369,40 @@ function renderAllocationList(container, items, available) {
       render();
     });
 
+    renderUsageList(usageList, item);
+    container.append(row);
+  });
+}
+
+function renderUsageList(container, item) {
+  container.replaceChildren();
+  const usage = Array.isArray(item.usage) ? item.usage : [];
+
+  if (!usage.length) {
+    container.append(emptyState("Nenhum uso registrado neste item."));
+    return;
+  }
+
+  usage.forEach((entry) => {
+    const row = document.createElement("div");
+    const label = document.createElement("span");
+    const amount = document.createElement("strong");
+    const remove = document.createElement("button");
+
+    row.className = "usage-row";
+    label.textContent = entry.description || "Uso registrado";
+    amount.textContent = currency.format(toNumber(entry.amount));
+    remove.className = "usage-delete";
+    remove.type = "button";
+    remove.setAttribute("aria-label", "Excluir uso");
+    remove.textContent = "×";
+    remove.addEventListener("click", () => {
+      item.usage = usage.filter((usageEntry) => usageEntry.id !== entry.id);
+      persist();
+      render();
+    });
+
+    row.append(label, amount, remove);
     container.append(row);
   });
 }
@@ -440,7 +486,7 @@ function addAllocation(form) {
     id: createId(),
     name: String(data.get("name")).trim(),
     percent: toNumber(data.get("percent")),
-    spent: 0,
+    usage: [],
   };
   budget.allocations.push(item);
   addAllocationToFutureMonths(item.name, item.percent);
@@ -461,7 +507,7 @@ function addAllocationToFutureMonths(name, percent) {
       id: createId(),
       name: cleanName,
       percent: toNumber(percent),
-      spent: 0,
+      usage: [],
     });
   });
 }
@@ -474,7 +520,7 @@ function renameAllocationInFutureMonths(previousName, nextName) {
   Object.entries(state.budgets).forEach(([month, budget]) => {
     if (month <= state.currentMonth) return;
     budget.allocations.forEach((item) => {
-      if (sameName(item.name, oldName) && toNumber(item.spent) === 0) {
+      if (sameName(item.name, oldName) && getAllocationSpent(item) === 0) {
         item.name = newName;
       }
     });
@@ -489,11 +535,18 @@ function updateAllocationPercentInFutureMonths(name, previousPercent, nextPercen
     if (month <= state.currentMonth) return;
     budget.allocations.forEach((item) => {
       const hasPreviousPercent = toNumber(item.percent) === toNumber(previousPercent);
-      if (sameName(item.name, cleanName) && hasPreviousPercent && toNumber(item.spent) === 0) {
+      if (sameName(item.name, cleanName) && hasPreviousPercent && getAllocationSpent(item) === 0) {
         item.percent = toNumber(nextPercent);
       }
     });
   });
+}
+
+function getAllocationSpent(item) {
+  if (Array.isArray(item.usage)) {
+    return item.usage.reduce((total, entry) => total + toNumber(entry.amount), 0);
+  }
+  return toNumber(item.spent);
 }
 
 function shiftMonth(delta) {
@@ -573,6 +626,12 @@ function normalizeBudget(budget) {
   };
 }
 
+function normalizeBudgets(budgets) {
+  return Object.fromEntries(
+    Object.entries(budgets || {}).map(([month, budget]) => [month, normalizeBudget(budget)]),
+  );
+}
+
 function normalizeMoneyItem(item) {
   return {
     id: item.id || createId(),
@@ -582,12 +641,37 @@ function normalizeMoneyItem(item) {
 }
 
 function normalizeAllocationItem(item) {
+  const usage = Array.isArray(item.usage)
+    ? item.usage.map(normalizeUsageEntry)
+    : legacySpentToUsage(item.spent);
+
   return {
     id: item.id || createId(),
     name: item.name || "",
     percent: toNumber(item.percent),
-    spent: toNumber(item.spent),
+    usage,
   };
+}
+
+function normalizeUsageEntry(entry) {
+  return {
+    id: entry.id || createId(),
+    description: entry.description || "",
+    amount: toNumber(entry.amount),
+    createdAt: entry.createdAt || new Date().toISOString(),
+  };
+}
+
+function legacySpentToUsage(spent) {
+  const amount = toNumber(spent);
+  if (!amount) return [];
+
+  return [{
+    id: createId(),
+    description: "Uso registrado",
+    amount,
+    createdAt: new Date().toISOString(),
+  }];
 }
 
 function getRemoteRef() {
@@ -645,7 +729,8 @@ function bindEvents() {
   elements.nextMonth.addEventListener("click", () => shiftMonth(1));
 }
 
-state.budgets = readLocalData();
+state.budgets = normalizeBudgets(readLocalData());
+writeLocalData();
 bindEvents();
 render();
 initializeFirebase();
