@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Orcamento da Casa</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Controle mensal</p>
+          <h1>Orcamento da Casa</h1>
+        </div>
+        <div class="sync-pill" id="syncStatus">Local</div>
+      </header>
+
+      <section class="month-strip" aria-label="Selecionar mes">
+        <button class="icon-button" type="button" id="prevMonth" aria-label="Mes anterior">‹</button>
+        <label>
+          <span>Mes</span>
+          <input id="monthPicker" type="month" />
+        </label>
+        <button class="icon-button" type="button" id="nextMonth" aria-label="Proximo mes">›</button>
+      </section>
+
+      <section class="summary-grid" aria-label="Resumo do orcamento">
+        <article class="summary-card main-card">
+          <span>Saldo disponivel</span>
+          <strong id="availableValue">R$ 0,00</strong>
+          <small id="summaryMessage">Informe sua renda e seus custos para comecar.</small>
+        </article>
+        <article class="summary-card">
+          <span>Renda</span>
+          <strong id="incomeValue">R$ 0,00</strong>
+        </article>
+        <article class="summary-card">
+          <span>Custos</span>
+          <strong id="expenseValue">R$ 0,00</strong>
+        </article>
+        <article class="summary-card">
+          <span>Distribuido</span>
+          <strong id="allocatedValue">R$ 0,00</strong>
+        </article>
+      </section>
+
+      <section class="workspace">
+        <section class="panel income-panel" aria-labelledby="incomeTitle">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Entrada</p>
+              <h2 id="incomeTitle">Quanto voce ganha no mes</h2>
+            </div>
+          </div>
+          <label class="field">
+            <span>Renda mensal</span>
+            <input id="incomeInput" type="number" min="0" step="0.01" placeholder="0,00" inputmode="decimal" />
+          </label>
+        </section>
+
+        <section class="panel" aria-labelledby="fixedTitle">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Obrigatorios</p>
+              <h2 id="fixedTitle">Custos fixos</h2>
+            </div>
+            <strong id="fixedTotal">R$ 0,00</strong>
+          </div>
+          <form class="quick-form" id="fixedForm">
+            <input name="name" aria-label="Nome do custo fixo" placeholder="Aluguel, internet..." required />
+            <input name="amount" aria-label="Valor do custo fixo" type="number" min="0" step="0.01" placeholder="Valor" required />
+            <button type="submit">Adicionar</button>
+          </form>
+          <div class="item-list" id="fixedList" aria-live="polite"></div>
+        </section>
+
+        <section class="panel" aria-labelledby="variableTitle">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Do mes</p>
+              <h2 id="variableTitle">Custos variaveis</h2>
+            </div>
+            <strong id="variableTotal">R$ 0,00</strong>
+          </div>
+          <form class="quick-form" id="variableForm">
+            <input name="name" aria-label="Nome do custo variavel" placeholder="Mercado, remedios..." required />
+            <input name="amount" aria-label="Valor do custo variavel" type="number" min="0" step="0.01" placeholder="Valor" required />
+            <button type="submit">Adicionar</button>
+          </form>
+          <div class="item-list" id="variableList" aria-live="polite"></div>
+        </section>
+
+        <section class="panel allocation-panel" aria-labelledby="allocationTitle">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Destino do saldo</p>
+              <h2 id="allocationTitle">Itens por porcentagem</h2>
+            </div>
+            <strong id="percentTotal">0%</strong>
+          </div>
+          <form class="quick-form allocation-form" id="allocationForm">
+            <input name="name" aria-label="Nome do item" placeholder="Reserva, viagem, lazer..." required />
+            <input name="percent" aria-label="Porcentagem do saldo" type="number" min="0" max="100" step="0.1" placeholder="%" required />
+            <button type="submit">Adicionar</button>
+          </form>
+          <div class="meter" aria-hidden="true">
+            <span id="percentMeter"></span>
+          </div>
+          <div class="warning" id="allocationWarning" hidden></div>
+          <div class="item-list" id="allocationList" aria-live="polite"></div>
+        </section>
+      </section>
+
+    </main>
+
+    <template id="moneyItemTemplate">
+      <article class="budget-row">
+        <input class="row-name" aria-label="Nome" />
+        <input class="row-number" aria-label="Valor" type="number" min="0" step="0.01" />
+        <button class="delete-button" type="button" aria-label="Excluir">×</button>
+      </article>
+    </template>
+
+    <template id="allocationItemTemplate">
+      <article class="budget-row allocation-row">
+        <input class="row-name" aria-label="Nome do item" />
+        <input class="row-number" aria-label="Porcentagem" type="number" min="0" max="100" step="0.1" />
+        <output class="allocation-amount">R$ 0,00</output>
+        <button class="delete-button" type="button" aria-label="Excluir">×</button>
+      </article>
+    </template>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

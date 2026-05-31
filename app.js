@@ -1,0 +1,448 @@
+const LOCAL_KEY = "orcamento-casa:data";
+const SETTINGS_KEY = "orcamento-casa:firebase";
+const DEFAULT_FIREBASE_SETTINGS = {
+  householdId: "minha-casa",
+  config: {
+    apiKey: "AIzaSyAv4bqLtHdW7IhbKEjMo1Kx_I8uTniBax0",
+    authDomain: "orcamento-casa-9ce51.firebaseapp.com",
+    projectId: "orcamento-casa-9ce51",
+    storageBucket: "orcamento-casa-9ce51.firebasestorage.app",
+    messagingSenderId: "124461434912",
+    appId: "1:124461434912:web:fa75b67fd1cf9abea35445",
+    measurementId: "G-5KKTKS8PXX",
+  },
+};
+
+const currency = new Intl.NumberFormat("pt-BR", {
+  style: "currency",
+  currency: "BRL",
+});
+
+const elements = {
+  syncStatus: document.querySelector("#syncStatus"),
+  monthPicker: document.querySelector("#monthPicker"),
+  prevMonth: document.querySelector("#prevMonth"),
+  nextMonth: document.querySelector("#nextMonth"),
+  incomeInput: document.querySelector("#incomeInput"),
+  incomeValue: document.querySelector("#incomeValue"),
+  expenseValue: document.querySelector("#expenseValue"),
+  availableValue: document.querySelector("#availableValue"),
+  allocatedValue: document.querySelector("#allocatedValue"),
+  summaryMessage: document.querySelector("#summaryMessage"),
+  fixedTotal: document.querySelector("#fixedTotal"),
+  variableTotal: document.querySelector("#variableTotal"),
+  percentTotal: document.querySelector("#percentTotal"),
+  percentMeter: document.querySelector("#percentMeter"),
+  allocationWarning: document.querySelector("#allocationWarning"),
+  fixedForm: document.querySelector("#fixedForm"),
+  variableForm: document.querySelector("#variableForm"),
+  allocationForm: document.querySelector("#allocationForm"),
+  fixedList: document.querySelector("#fixedList"),
+  variableList: document.querySelector("#variableList"),
+  allocationList: document.querySelector("#allocationList"),
+};
+
+const state = {
+  currentMonth: getCurrentMonth(),
+  budgets: {},
+  settings: readSettings(),
+  firebase: null,
+  unsubscribe: null,
+  suppressRemoteSave: false,
+};
+
+function getCurrentMonth() {
+  return formatMonth(new Date());
+}
+
+function formatMonth(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+}
+
+function createBudget() {
+  return {
+    income: 0,
+    fixed: [],
+    variable: [],
+    allocations: [],
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function getBudget() {
+  if (!state.budgets[state.currentMonth]) {
+    state.budgets[state.currentMonth] = createBudget();
+  }
+  return state.budgets[state.currentMonth];
+}
+
+function readLocalData() {
+  try {
+    return JSON.parse(localStorage.getItem(LOCAL_KEY)) || {};
+  } catch {
+    return {};
+  }
+}
+
+function writeLocalData() {
+  localStorage.setItem(LOCAL_KEY, JSON.stringify(state.budgets));
+}
+
+function readSettings() {
+  try {
+    const stored = localStorage.getItem(SETTINGS_KEY);
+    if (!stored) return DEFAULT_FIREBASE_SETTINGS;
+    const settings = JSON.parse(stored);
+    return settings?.disabled ? null : settings;
+  } catch {
+    return DEFAULT_FIREBASE_SETTINGS;
+  }
+}
+
+function writeSettings(settings) {
+  if (!settings) {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ disabled: true }));
+    return;
+  }
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+}
+
+function toNumber(value) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function createId() {
+  return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+}
+
+function sumItems(items, field = "amount") {
+  return items.reduce((total, item) => total + toNumber(item[field]), 0);
+}
+
+function calculateBudget(budget) {
+  const fixed = sumItems(budget.fixed);
+  const variable = sumItems(budget.variable);
+  const expenses = fixed + variable;
+  const leftover = toNumber(budget.income) - expenses;
+  const positiveLeftover = Math.max(leftover, 0);
+  const percent = sumItems(budget.allocations, "percent");
+  const allocated = budget.allocations.reduce((total, item) => {
+    return total + positiveLeftover * (toNumber(item.percent) / 100);
+  }, 0);
+
+  return {
+    fixed,
+    variable,
+    expenses,
+    leftover,
+    positiveLeftover,
+    percent,
+    allocated,
+    unallocated: leftover - allocated,
+  };
+}
+
+function updateStatus(text, mode = "local") {
+  elements.syncStatus.textContent = text;
+  elements.syncStatus.className = `sync-pill ${mode}`;
+}
+
+function persist() {
+  const budget = getBudget();
+  budget.updatedAt = new Date().toISOString();
+  writeLocalData();
+  if (state.firebase && !state.suppressRemoteSave) {
+    saveRemoteBudget(budget);
+  }
+}
+
+function render() {
+  const budget = getBudget();
+  const totals = calculateBudget(budget);
+
+  elements.monthPicker.value = state.currentMonth;
+  elements.incomeInput.value = budget.income || "";
+  elements.incomeValue.textContent = currency.format(toNumber(budget.income));
+  elements.fixedTotal.textContent = currency.format(totals.fixed);
+  elements.variableTotal.textContent = currency.format(totals.variable);
+  elements.expenseValue.textContent = currency.format(totals.expenses);
+  elements.availableValue.textContent = currency.format(totals.leftover);
+  elements.allocatedValue.textContent = currency.format(totals.allocated);
+  elements.percentTotal.textContent = `${trimNumber(totals.percent)}%`;
+  elements.percentMeter.style.width = `${Math.min(totals.percent, 100)}%`;
+
+  if (totals.leftover < 0) {
+    elements.summaryMessage.textContent = `Faltam ${currency.format(Math.abs(totals.leftover))} para fechar este mes.`;
+  } else if (totals.percent > 100) {
+    elements.summaryMessage.textContent = "As porcentagens dos itens passam de 100% do saldo.";
+  } else {
+    elements.summaryMessage.textContent = `${currency.format(Math.max(totals.unallocated, 0))} ainda sem destino.`;
+  }
+
+  if (totals.percent > 100) {
+    elements.allocationWarning.hidden = false;
+    elements.allocationWarning.textContent = `Os itens somam ${trimNumber(totals.percent)}%. Reduza ${trimNumber(totals.percent - 100)} ponto(s) para caber no saldo.`;
+  } else {
+    elements.allocationWarning.hidden = true;
+  }
+
+  renderMoneyList(elements.fixedList, budget.fixed, "fixed");
+  renderMoneyList(elements.variableList, budget.variable, "variable");
+  renderAllocationList(elements.allocationList, budget.allocations, totals.positiveLeftover);
+}
+
+function renderMoneyList(container, items, type) {
+  const template = document.querySelector("#moneyItemTemplate");
+  container.replaceChildren();
+
+  if (!items.length) {
+    container.append(emptyState(type === "fixed" ? "Nenhum custo fixo ainda." : "Nenhum custo variavel ainda."));
+    return;
+  }
+
+  items.forEach((item) => {
+    const row = template.content.firstElementChild.cloneNode(true);
+    const name = row.querySelector(".row-name");
+    const amount = row.querySelector(".row-number");
+    const remove = row.querySelector(".delete-button");
+
+    name.value = item.name;
+    amount.value = item.amount || "";
+
+    name.addEventListener("change", () => {
+      item.name = name.value.trimStart();
+      persist();
+    });
+    amount.addEventListener("change", () => {
+      item.amount = toNumber(amount.value);
+      persist();
+      render();
+    });
+    remove.addEventListener("click", () => {
+      const budget = getBudget();
+      budget[type] = budget[type].filter((entry) => entry.id !== item.id);
+      persist();
+      render();
+    });
+
+    container.append(row);
+  });
+}
+
+function renderAllocationList(container, items, available) {
+  const template = document.querySelector("#allocationItemTemplate");
+  container.replaceChildren();
+
+  if (!items.length) {
+    container.append(emptyState("Crie itens para dividir automaticamente o saldo."));
+    return;
+  }
+
+  items.forEach((item) => {
+    const row = template.content.firstElementChild.cloneNode(true);
+    const name = row.querySelector(".row-name");
+    const percent = row.querySelector(".row-number");
+    const amount = row.querySelector(".allocation-amount");
+    const remove = row.querySelector(".delete-button");
+
+    name.value = item.name;
+    percent.value = item.percent || "";
+    amount.value = currency.format(available * (toNumber(item.percent) / 100));
+    amount.textContent = amount.value;
+
+    name.addEventListener("change", () => {
+      item.name = name.value.trimStart();
+      persist();
+    });
+    percent.addEventListener("change", () => {
+      item.percent = toNumber(percent.value);
+      persist();
+      render();
+    });
+    remove.addEventListener("click", () => {
+      const budget = getBudget();
+      budget.allocations = budget.allocations.filter((entry) => entry.id !== item.id);
+      persist();
+      render();
+    });
+
+    container.append(row);
+  });
+}
+
+function emptyState(text) {
+  const paragraph = document.createElement("p");
+  paragraph.className = "muted";
+  paragraph.textContent = text;
+  return paragraph;
+}
+
+function trimNumber(number) {
+  return Number(number.toFixed(1)).toString().replace(".", ",");
+}
+
+function addMoneyItem(type, form) {
+  const data = new FormData(form);
+  const budget = getBudget();
+  budget[type].push({
+    id: createId(),
+    name: String(data.get("name")).trim(),
+    amount: toNumber(data.get("amount")),
+  });
+  form.reset();
+  persist();
+  render();
+}
+
+function addAllocation(form) {
+  const data = new FormData(form);
+  const budget = getBudget();
+  budget.allocations.push({
+    id: createId(),
+    name: String(data.get("name")).trim(),
+    percent: toNumber(data.get("percent")),
+  });
+  form.reset();
+  persist();
+  render();
+}
+
+function shiftMonth(delta) {
+  const [year, month] = state.currentMonth.split("-").map(Number);
+  const next = new Date(year, month - 1 + delta, 1);
+  state.currentMonth = formatMonth(next);
+  listenRemoteMonth();
+  render();
+}
+
+async function initializeFirebase() {
+  if (!state.settings) {
+    updateStatus("Local", "local");
+    return;
+  }
+
+  try {
+    updateStatus("Conectando", "local");
+    const appModule = await import("https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js");
+    const authModule = await import("https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js");
+    const firestoreModule = await import("https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js");
+
+    const app = appModule.getApps().length
+      ? appModule.getApps()[0]
+      : appModule.initializeApp(state.settings.config);
+    const auth = authModule.getAuth(app);
+    await authModule.signInAnonymously(auth);
+
+    state.firebase = {
+      db: firestoreModule.getFirestore(app),
+      doc: firestoreModule.doc,
+      setDoc: firestoreModule.setDoc,
+      onSnapshot: firestoreModule.onSnapshot,
+      serverTimestamp: firestoreModule.serverTimestamp,
+    };
+
+    updateStatus("Firebase", "online");
+    listenRemoteMonth();
+  } catch (error) {
+    console.error(error);
+    updateStatus("Erro Firebase", "error");
+  }
+}
+
+function listenRemoteMonth() {
+  if (!state.firebase || !state.settings) return;
+  if (state.unsubscribe) state.unsubscribe();
+
+  const ref = getRemoteRef();
+  state.unsubscribe = state.firebase.onSnapshot(ref, (snapshot) => {
+    if (!snapshot.exists()) {
+      saveRemoteBudget(getBudget());
+      return;
+    }
+
+    const remoteBudget = snapshot.data().budget;
+    if (!remoteBudget) return;
+
+    state.suppressRemoteSave = true;
+    state.budgets[state.currentMonth] = normalizeBudget(remoteBudget);
+    writeLocalData();
+    render();
+    state.suppressRemoteSave = false;
+  }, (error) => {
+    console.error(error);
+    updateStatus("Erro Firebase", "error");
+  });
+}
+
+function normalizeBudget(budget) {
+  return {
+    ...createBudget(),
+    ...budget,
+    fixed: Array.isArray(budget.fixed) ? budget.fixed : [],
+    variable: Array.isArray(budget.variable) ? budget.variable : [],
+    allocations: Array.isArray(budget.allocations) ? budget.allocations : [],
+  };
+}
+
+function getRemoteRef() {
+  return state.firebase.doc(
+    state.firebase.db,
+    "households",
+    state.settings.householdId,
+    "months",
+    state.currentMonth,
+  );
+}
+
+async function saveRemoteBudget(budget) {
+  try {
+    await state.firebase.setDoc(getRemoteRef(), {
+      budget,
+      updatedAt: state.firebase.serverTimestamp(),
+    }, { merge: true });
+    updateStatus("Firebase", "online");
+  } catch (error) {
+    console.error(error);
+    updateStatus("Erro ao salvar", "error");
+  }
+}
+
+function bindEvents() {
+  elements.incomeInput.addEventListener("input", () => {
+    getBudget().income = toNumber(elements.incomeInput.value);
+    persist();
+    render();
+  });
+
+  elements.fixedForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    addMoneyItem("fixed", elements.fixedForm);
+  });
+
+  elements.variableForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    addMoneyItem("variable", elements.variableForm);
+  });
+
+  elements.allocationForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    addAllocation(elements.allocationForm);
+  });
+
+  elements.monthPicker.addEventListener("change", () => {
+    state.currentMonth = elements.monthPicker.value || getCurrentMonth();
+    listenRemoteMonth();
+    render();
+  });
+
+  elements.prevMonth.addEventListener("click", () => shiftMonth(-1));
+  elements.nextMonth.addEventListener("click", () => shiftMonth(1));
+}
+
+state.budgets = readLocalData();
+bindEvents();
+render();
+initializeFirebase();
